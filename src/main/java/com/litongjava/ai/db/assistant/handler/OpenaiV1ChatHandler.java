@@ -21,6 +21,7 @@ import com.litongjava.tio.http.common.HttpResponse;
 import com.litongjava.tio.http.common.encoder.ChunkEncoder;
 import com.litongjava.tio.http.common.sse.SseBytesPacket;
 import com.litongjava.tio.http.server.util.HttpServerResponseUtils;
+import com.litongjava.tio.http.server.util.SseUtils;
 import com.litongjava.tio.utils.environment.EnvUtils;
 import com.litongjava.tio.utils.json.FastJson2Utils;
 import com.litongjava.tio.utils.json.JsonUtils;
@@ -169,9 +170,7 @@ public class OpenaiV1ChatHandler {
                   String content = choices.getJSONObject(0).getJSONObject("delta").getString("content");
                   // 只发送content信息
                   if (content != null) {
-                    SseBytesPacket ssePacket = new SseBytesPacket(ChunkEncoder.encodeChunk(bytes));
-                    // 再次向客户端发送sse消息
-                    Tio.send(channelContext, ssePacket);
+                    SseUtils.pushChunk(channelContext, bytes);
                   }
                   extraChoices(choices, completionContent, fnCallName, fnCallArgs, toolFnCallId, toolFnCallName,
                       toolFnCallArgs);
