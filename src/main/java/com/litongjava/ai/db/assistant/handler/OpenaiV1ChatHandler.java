@@ -1,16 +1,16 @@
 package com.litongjava.ai.db.assistant.handler;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.jfinal.kit.Kv;
 import com.litongjava.ai.db.assistant.client.OpenAiClient;
-import com.litongjava.ai.db.assistant.client.StreamModelUtils;
 import com.litongjava.ai.db.assistant.constants.OpenAiConstatns;
 import com.litongjava.ai.db.assistant.services.OpenaiV1ChatService;
-import com.litongjava.data.utils.MarkdownTableUtils;
 import com.litongjava.tio.boot.http.TioControllerContext;
 import com.litongjava.tio.core.ChannelContext;
 import com.litongjava.tio.core.Tio;
@@ -71,33 +71,16 @@ public class OpenaiV1ChatHandler {
       } else {
         return httpResponse.setJson(RespVo.fail("empty body"));
       }
-
-      // test(channelContext);
-      // 无需移除
-      // Tio.remove(channelContext, "remove");
     } else {
       openAiRequestVo = openaiV1ChatService.beforeCompletions(openAiRequestVo);
       Response response = OpenAiClient.completions(headers, openAiRequestVo.toString());
       HttpServerResponseUtils.fromOkHttp(response, httpResponse);
       httpResponse.setHasGzipped(true);
-      // httpResponse.setHasCountContentLength(true);
       httpResponse.removeHeaders("Transfer-Encoding");
-      // httpResponse.removeHeaders("Content-Encoding");
-      // httpResponse.removeHeaders("Cache-Control");
-      // httpResponse.removeHeaders("CF-RAY");
-      // httpResponse.removeHeaders("CF-Cache-Status");
       httpResponse.removeHeaders("Server");
       httpResponse.removeHeaders("Date");
       httpResponse.setHeader("Connection", "close");
       httpResponse.removeHeaders("Set-Cookie");
-      // 算了,数据没有解码
-//      try {
-//        String string =new String(httpResponse.getBody()); 
-//        log.info("llm response:{}", string);
-//      } catch (Exception e) {
-//        e.printStackTrace();
-//      }
-
       long end = System.currentTimeMillis();
       log.info("finish llm in {} (ms):", (end - start));
     }
@@ -113,7 +96,7 @@ public class OpenaiV1ChatHandler {
    * @param headers
    * @param start
    */
-  private void streamResponse(ChannelContext channelContext, HttpResponse httpResponse, Map<String, String> headers,
+  public void streamResponse(ChannelContext channelContext, HttpResponse httpResponse, Map<String, String> headers,
       JSONObject requestBody, long start) {
 
     OpenAiClient.completions(headers, requestBody.toString(), new Callback() {
@@ -139,8 +122,6 @@ public class OpenaiV1ChatHandler {
           Tio.send(channelContext, httpResponse);
           return;
         }
-        // 设置为立即发送,不使用队列
-        // channelContext.tioConfig.setUseQueueSend(false);
         // 设置sse请求头
         httpResponse.setServerSentEventsHeader();
         // 60秒后客户端关闭连接
@@ -164,6 +145,10 @@ public class OpenaiV1ChatHandler {
           StringBuffer fnCallName = new StringBuffer();
           StringBuffer fnCallArgs = new StringBuffer();
 
+          StringBuffer toolFnCallId = new StringBuffer();
+          StringBuffer toolFnCallName = new StringBuffer();
+          StringBuffer toolFnCallArgs = new StringBuffer();
+
           String line;
           while ((line = responseBody.source().readUtf8Line()) != null) {
             // 必须添加一个回车符号
@@ -173,7 +158,6 @@ public class OpenaiV1ChatHandler {
             }
             line = openaiV1ChatService.processLine(line);
 
-            // byte[] bytes = body.bytes();
             if (line.length() > 6) {
               int indexOf = line.indexOf(':');
               String data = line.substring(indexOf + 1, line.length());
@@ -182,87 +166,28 @@ public class OpenaiV1ChatHandler {
                 JSONObject parseObject = FastJson2Utils.parseObject(data);
                 JSONArray choices = parseObject.getJSONArray("choices");
                 if (choices.size() > 0) {
-                  String function_call = choices.getJSONObject(0).getJSONObject("delta").getString("function_call");
-                  // function_call不发送到前端,只发送content信息
-                  if (function_call == null) {
+                  String content = choices.getJSONObject(0).getJSONObject("delta").getString("content");
+                  // 只发送content信息
+                  if (content != null) {
                     SseBytesPacket ssePacket = new SseBytesPacket(ChunkEncoder.encodeChunk(bytes));
                     // 再次向客户端发送sse消息
                     Tio.send(channelContext, ssePacket);
                   }
-                  extraChoices(completionContent, fnCallName, fnCallArgs, choices);
+                  extraChoices(choices, completionContent, fnCallName, fnCallArgs, toolFnCallId, toolFnCallName,
+                      toolFnCallArgs);
                 }
-              } else {
-                // log.info("data not end with }");
-                // 有可能是结束标记,发送
-                // SseBytesPacket ssePacket = new SseBytesPacket(ChunkEncoder.encodeChunk(bytes));
-                // 再次向客户端发送sse消息
-                // Tio.send(channelContext, ssePacket);
               }
             }
-//            else {
-//              log.info("send data length less than 6 }");
-//              // 有可能是结束标记,发送
-//              SseBytesPacket ssePacket = new SseBytesPacket(ChunkEncoder.encodeChunk(bytes));
-//              // 再次向客户端发送sse消息
-//              Tio.send(channelContext, ssePacket);
-//            }
           }
           openaiV1ChatService.completionContent(completionContent);
-          // 发送一个大小为 0 的 chunk 以表示消息结束
+
           if (fnCallName.length() > 0) {
-            // 获取数据
-            String content = MarkdownTableUtils.code("fncall", fnCallName + "(" + fnCallArgs + ")");
+            processFnCall(channelContext, httpResponse, headers, requestBody, start, fnCallName, fnCallArgs, "user",
+                null);
+          } else if (toolFnCallName.length() > 0) {
+            processFnCall(channelContext, httpResponse, headers, requestBody, start, toolFnCallName, toolFnCallArgs,
+                "tool", toolFnCallId.toString());
 
-            Kv chunk = StreamModelUtils.buildMessage("system", content);
-            String text = "data:" + JsonUtils.toJson(chunk) + "\n\n";
-            byte[] bytes = text.getBytes();
-            SseBytesPacket ssePacket = new SseBytesPacket(ChunkEncoder.encodeChunk(bytes));
-            // 再次向客户端发送sse消息
-            Tio.send(channelContext, ssePacket);
-
-            Kv functionCallResult = openaiV1ChatService.functionCall(fnCallName, fnCallArgs);
-            // 再次发送到大模型
-            if (functionCallResult != null) {
-              long newStart = System.currentTimeMillis();
-              JSONArray messages = requestBody.getJSONArray("messages");
-
-              Kv functionCall = Kv.by("name", fnCallName).set("arguments", fnCallArgs);
-              Kv assistantMessage = Kv.create();
-              assistantMessage.set("role", "assistant").set("content", null).set("function_call", functionCall);
-              Kv userMessage = Kv.create().set("role", "user").set("content", JsonUtils.toJson(functionCallResult));
-
-              messages.add(assistantMessage);
-              messages.add(userMessage);
-              // 防止重复发送响应头
-              httpResponse.setSend(true);
-
-              content = null;
-              String error = functionCallResult.getStr("error");
-              String message = functionCallResult.getStr("message");
-              if (error != null) {
-                content = MarkdownTableUtils.code("error", "error:" + error);
-              } else if (message != null) {
-                content = MarkdownTableUtils.code("message", "message:" + message);
-              }
-
-              if (content != null) {
-                chunk = StreamModelUtils.buildMessage("system", content);
-
-                text = "data:" + JsonUtils.toJson(chunk) + "\n\n";
-
-                bytes = text.getBytes();
-                ssePacket = new SseBytesPacket(ChunkEncoder.encodeChunk(bytes));
-                // 再次向客户端发送sse消息
-                Tio.send(channelContext, ssePacket);
-              }
-
-              streamResponse(channelContext, httpResponse, headers, requestBody, newStart);
-
-            } else {
-              long end = System.currentTimeMillis();
-              log.info("finish llm in {} (ms):", (end - start));
-              closeSeeConnection(channelContext);
-            }
           } else {
             closeSeeConnection(channelContext);
           }
@@ -271,6 +196,52 @@ public class OpenaiV1ChatHandler {
     });
   }
 
+  public void processFnCall(ChannelContext channelContext, HttpResponse httpResponse, Map<String, String> headers,
+      JSONObject requestBody, long start, StringBuffer fnCallName, StringBuffer fnCallArgs, String roleName,
+      String fnCallId) {
+
+    Kv functionCallResult = openaiV1ChatService.functionCall(channelContext, fnCallName, fnCallArgs);
+    // 再次发送到大模型
+    if (functionCallResult != null) {
+      long newStart = System.currentTimeMillis();
+      JSONArray messages = requestBody.getJSONArray("messages");
+
+      Kv functionCall = Kv.by("name", fnCallName).set("arguments", fnCallArgs);
+
+      // 查询结果
+      Kv result = Kv.by("content", JsonUtils.toJson(functionCallResult));
+      Kv lastMesage = Kv.by("role", "assistant");
+
+      // assistantMessage.set("role", "s").set("content", null);
+
+      if (fnCallId.length() > 0) {
+        result.set("role", "tool").set("tool_call_id", fnCallId).set("name", fnCallName);
+
+        List<Kv> toolCalls = new ArrayList<>(1);
+        toolCalls.add(Kv.by("id", fnCallId).set("function", functionCall).set("type", "function"));
+        lastMesage.set("tool_calls", toolCalls);
+      } else {
+        result.set("role", "system");
+        lastMesage.set("function_call", functionCall);
+
+      }
+      messages.add(lastMesage);
+      messages.add(result);
+      // 防止重复发送响应头
+      httpResponse.setSend(true);
+      streamResponse(channelContext, httpResponse, headers, requestBody, newStart);
+
+    } else {
+      long end = System.currentTimeMillis();
+      log.info("finish llm in {} (ms):", (end - start));
+      closeSeeConnection(channelContext);
+    }
+  }
+
+  /**
+   * 发送一个大小为 0 的 chunk 以表示消息结束
+   * @param channelContext
+   */
   public void closeSeeConnection(ChannelContext channelContext) {
     // 关闭连接
     byte[] zeroChunk = ChunkEncoder.encodeChunk(new byte[0]);
@@ -308,8 +279,8 @@ public class OpenaiV1ChatHandler {
     }
   }
 
-  public void extraChoices(StringBuffer complectionContent, StringBuffer fnCallName, StringBuffer fnCallArgs,
-      JSONArray choices) {
+  public void extraChoices(JSONArray choices, StringBuffer complectionContent, StringBuffer fnCallName,
+      StringBuffer fnCallArgs, StringBuffer tooFnCallId, StringBuffer tooFnCallName, StringBuffer tooFnCallArgs) {
     if (choices.size() > 0) {
       for (int i = 0; i < choices.size(); i++) {
         JSONObject delta = choices.getJSONObject(i).getJSONObject("delta");
@@ -329,6 +300,26 @@ public class OpenaiV1ChatHandler {
           if (arguments != null) {
             // System.out.println("arguments:" + arguments);
             fnCallArgs.append(arguments);
+          }
+        }
+        String toolCallsString = delta.getString("tool_calls");
+        if (toolCallsString != null) {
+          // 不考虑执行多个的问题
+          JSONArray parseArray = FastJson2Utils.parseArray(toolCallsString);
+          JSONObject toolCall = parseArray.getJSONObject(0);
+          String id = toolCall.getString("id");
+          if (id != null) {
+            tooFnCallId.append(id);
+          }
+
+          JSONObject funcation = toolCall.getJSONObject("function");
+          String name = funcation.getString("name");
+          if (name != null) {
+            tooFnCallName.append(name);
+          }
+          String arguments = funcation.getString("arguments");
+          if (arguments != null) {
+            tooFnCallArgs.append(arguments);
           }
         }
       }

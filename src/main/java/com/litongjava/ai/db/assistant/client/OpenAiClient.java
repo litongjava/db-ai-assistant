@@ -38,6 +38,7 @@ public class OpenAiClient {
   }
 
   public static void completions(Map<String, String> requestHeaders, String bodyString, Callback callback) {
+    System.out.println(bodyString);
     OkHttpClient httpClient = OkHttpClientPool.getHttpClient();
 
     MediaType mediaType = MediaType.parse("application/json");

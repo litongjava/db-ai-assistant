@@ -9,16 +9,21 @@ import com.alibaba.fastjson2.JSONObject;
 import com.jfinal.kit.Kv;
 import com.jfinal.template.Engine;
 import com.jfinal.template.Template;
+import com.litongjava.ai.db.assistant.client.StreamModelUtils;
 import com.litongjava.ai.db.assistant.constants.Fns;
 import com.litongjava.ai.db.assistant.constants.Prompts;
 import com.litongjava.data.services.DbService;
+import com.litongjava.data.utils.MarkdownTableUtils;
 import com.litongjava.jfinal.aop.Aop;
 import com.litongjava.jfinal.plugin.activerecord.Db;
 import com.litongjava.tio.boot.constatns.TioBootConfigKeys;
+import com.litongjava.tio.core.ChannelContext;
+import com.litongjava.tio.http.server.util.SseUtils;
 import com.litongjava.tio.utils.dsn.DbDSNParser;
 import com.litongjava.tio.utils.dsn.JdbcInfo;
 import com.litongjava.tio.utils.environment.EnvUtils;
 import com.litongjava.tio.utils.json.FastJson2Utils;
+import com.litongjava.tio.utils.json.JsonUtils;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -54,10 +59,10 @@ public class OpenaiV1ChatService {
       jsonArray.add(0, jsonObject);
     }
 
-    JSONArray functions = openAiRequestVo.getJSONArray("functions");
+    JSONArray functions = openAiRequestVo.getJSONArray("tools");
     if (functions == null) {
-      functions = initPrompt.getJSONArray("functions");
-      openAiRequestVo.put("functions", functions);
+      functions = initPrompt.getJSONArray("tools");
+      openAiRequestVo.put("tools", functions);
     }
 
     return openAiRequestVo;
@@ -81,35 +86,53 @@ public class OpenaiV1ChatService {
 
   /**
    * result,mesage,error 
+   * @param channelContext 
    * @return
    */
-  public Kv functionCall(StringBuffer fnCallName, StringBuffer fnCallArgs) {
+  public Kv functionCall(ChannelContext channelContext, StringBuffer fnCallName, StringBuffer fnCallArgs) {
+
     log.info("fn:{},{}", fnCallName.toString(), fnCallArgs.toString());
     if (Fns.find.equals(fnCallName.toString())) {
       JSONObject parseObject = FastJson2Utils.parseObject(fnCallArgs.toString());
       String sql = parseObject.getString("sql");
+
+      // 获取数据
+      String content = MarkdownTableUtils.code("sql", fnCallName + "(" + fnCallArgs + ")");
+
+      Kv chunk = StreamModelUtils.buildMessage("system", content);
+      SseUtils.pushChunk(channelContext, JsonUtils.toJson(chunk));
+
       CoursesService coursesService = Aop.get(CoursesService.class);
       try {
         if (sql.contains("COUNT(") || sql.contains("LIMIT")) {
           List<Kv> lists = coursesService.find(sql);
           return Kv.by("result", lists);
-        } else {
-          int indexOf = sql.indexOf("FROM");
-          if (indexOf > 0) {
-            String sqlExceptSelect = sql.substring(indexOf);
-            String tatalRowSql = Db.use().getConfig().getDialect().forPaginateTotalRow(null, sqlExceptSelect, null);
-            Long count = Db.queryLong(tatalRowSql);
-            if (count > 10) {
-              String string = "total records are " + count + ", please set page size to 10";
-              log.info(string);
-              return Kv.by("message", string);
-            }else {
-              List<Kv> lists = coursesService.find(sql);
-              return Kv.by("result", lists);
-            }
-          }
         }
+        int indexOf = sql.indexOf("FROM");
+        if (indexOf > 0) {
+          String sqlExceptSelect = sql.substring(indexOf);
+          String tatalRowSql = Db.use().getConfig().getDialect().forPaginateTotalRow(null, sqlExceptSelect, null);
+          Long count = Db.queryLong(tatalRowSql);
+          if (count > 10) {
+            String string = "total records are " + count + ", please set page size to 10";
+            log.info(string);
+            // 发送消息到客户端
+            Kv message = StreamModelUtils.buildMessage("system", string);
+            SseUtils.pushChunk(channelContext, JsonUtils.toJson(message));
+            return Kv.by("message", string);
+          } else {
+            List<Kv> lists = coursesService.find(sql);
+            return Kv.by("result", lists);
+          }
+        } else {
+          List<Kv> lists = coursesService.find(sql);
+          return Kv.by("result", lists);
+        }
+
       } catch (Exception e) {
+        // 发送消息到客户端
+        Kv message = StreamModelUtils.buildMessage("system", e.getMessage());
+        SseUtils.pushChunk(channelContext, JsonUtils.toJson(message));
         return Kv.by("error", e.getMessage());
       }
     }

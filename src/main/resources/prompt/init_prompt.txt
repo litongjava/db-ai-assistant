@@ -6,26 +6,30 @@
       "content": "#include("init_prompt_message.txt")"
     }
   ],
-  "functions":
+  "tools":
   [
     {
-      "name": "find",
-      "description": "根据sql查询数据库",
-      "parameters":
+      "type": "function",
+      "function":
       {
-        "type": "object",
-        "properties":
+        "name": "find",
+        "description": "根据sql查询数据库",
+        "parameters":
         {
-          "sql":
+          "type": "object",
+          "properties":
           {
-            "description": "需要执行的sql语句",
-            "type": "string"
-          }
-        },
-        "required":
-        [
-          "sql"
-        ]
+            "sql":
+            {
+              "description": "需要执行的sql语句",
+              "type": "string"
+            }
+          },
+          "required":
+          [
+            "sql"
+          ]
+        }
       }
     }
   ]
