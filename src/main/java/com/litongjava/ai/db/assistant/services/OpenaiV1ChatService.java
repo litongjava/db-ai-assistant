@@ -11,20 +11,36 @@ import com.jfinal.template.Engine;
 import com.jfinal.template.Template;
 import com.litongjava.ai.db.assistant.constants.Fns;
 import com.litongjava.ai.db.assistant.constants.Prompts;
+import com.litongjava.data.services.DbService;
 import com.litongjava.jfinal.aop.Aop;
+import com.litongjava.jfinal.plugin.activerecord.Db;
+import com.litongjava.tio.boot.constatns.TioBootConfigKeys;
+import com.litongjava.tio.utils.dsn.DbDSNParser;
+import com.litongjava.tio.utils.dsn.JdbcInfo;
+import com.litongjava.tio.utils.environment.EnvUtils;
 import com.litongjava.tio.utils.json.FastJson2Utils;
-import com.litongjava.tio.utils.json.JsonUtils;
 
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 public class OpenaiV1ChatService {
+  private DbService dbService = new DbService();
 
   public JSONObject beforeCompletions(JSONObject openAiRequestVo) {
     Engine engine = Engine.use();
     Template template = engine.getTemplate("init_prompt.txt");
+    String dsn = EnvUtils.get(TioBootConfigKeys.DATABASE_DSN);
+    JdbcInfo jdbc = new DbDSNParser().parse(dsn);
+    String dbType = jdbc.getDbType();
+
+    String markdown = dbService.getAllTableColumnsOfMarkdown(Db.use());
+    String dataExamples = dbService.getAllTableDataExamplesOfMarkdown(Db.use());
+
     Map<String, String> values = new HashMap<>();
-    values.put("value", "postgresql");
+    values.put("dbType", dbType);
+    values.put("tables", markdown);
+    values.put("table_examples", dataExamples);
+
     String renderToString = template.renderToString(values);
     JSONObject initPrompt = FastJson2Utils.parseObject(renderToString);
 
@@ -51,12 +67,10 @@ public class OpenaiV1ChatService {
 //    log.info("line:{}", line);
     return line;
   }
-  
 
   public String processData(String data) {
-    log.info("data:{}",data);
     return data;
-    
+
   }
 
   public void completionContent(StringBuffer completionContent) {
@@ -65,21 +79,39 @@ public class OpenaiV1ChatService {
 
   }
 
-  public String functionCall(StringBuffer fnCallName, StringBuffer fnCallArgs) {
+  /**
+   * result,mesage,error 
+   * @return
+   */
+  public Kv functionCall(StringBuffer fnCallName, StringBuffer fnCallArgs) {
     log.info("fn:{},{}", fnCallName.toString(), fnCallArgs.toString());
     if (Fns.find.equals(fnCallName.toString())) {
       JSONObject parseObject = FastJson2Utils.parseObject(fnCallArgs.toString());
       String sql = parseObject.getString("sql");
       CoursesService coursesService = Aop.get(CoursesService.class);
-      List<Kv> find = null;
       try {
-        find = coursesService.find(sql);
+        if (sql.contains("COUNT(") || sql.contains("LIMIT")) {
+          List<Kv> lists = coursesService.find(sql);
+          return Kv.by("result", lists);
+        } else {
+          int indexOf = sql.indexOf("FROM");
+          if (indexOf > 0) {
+            String sqlExceptSelect = sql.substring(indexOf);
+            String tatalRowSql = Db.use().getConfig().getDialect().forPaginateTotalRow(null, sqlExceptSelect, null);
+            Long count = Db.queryLong(tatalRowSql);
+            if (count > 10) {
+              String string = "total records are " + count + ", please set page size to 10";
+              log.info(string);
+              return Kv.by("message", string);
+            }else {
+              List<Kv> lists = coursesService.find(sql);
+              return Kv.by("result", lists);
+            }
+          }
+        }
       } catch (Exception e) {
-        return e.getMessage();
+        return Kv.by("error", e.getMessage());
       }
-
-      return JsonUtils.toJson(find);
-
     }
     return null;
 

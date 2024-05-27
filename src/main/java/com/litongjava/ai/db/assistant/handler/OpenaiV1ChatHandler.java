@@ -7,8 +7,10 @@ import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.jfinal.kit.Kv;
 import com.litongjava.ai.db.assistant.client.OpenAiClient;
+import com.litongjava.ai.db.assistant.client.StreamModelUtils;
 import com.litongjava.ai.db.assistant.constants.OpenAiConstatns;
 import com.litongjava.ai.db.assistant.services.OpenaiV1ChatService;
+import com.litongjava.data.utils.MarkdownTableUtils;
 import com.litongjava.tio.boot.http.TioControllerContext;
 import com.litongjava.tio.core.ChannelContext;
 import com.litongjava.tio.core.Tio;
@@ -21,6 +23,7 @@ import com.litongjava.tio.http.common.sse.SseBytesPacket;
 import com.litongjava.tio.http.server.util.HttpServerResponseUtils;
 import com.litongjava.tio.utils.environment.EnvUtils;
 import com.litongjava.tio.utils.json.FastJson2Utils;
+import com.litongjava.tio.utils.json.JsonUtils;
 import com.litongjava.tio.utils.resp.RespVo;
 
 import lombok.extern.slf4j.Slf4j;
@@ -173,7 +176,7 @@ public class OpenaiV1ChatHandler {
             // byte[] bytes = body.bytes();
             if (line.length() > 6) {
               int indexOf = line.indexOf(':');
-              String data = line.substring(indexOf+1, line.length());
+              String data = line.substring(indexOf + 1, line.length());
               openaiV1ChatService.processData(data);
               if (data.endsWith("}")) {
                 JSONObject parseObject = FastJson2Utils.parseObject(data);
@@ -189,7 +192,7 @@ public class OpenaiV1ChatHandler {
                   extraChoices(completionContent, fnCallName, fnCallArgs, choices);
                 }
               } else {
-                log.info("data not end with }");
+                // log.info("data not end with }");
                 // 有可能是结束标记,发送
                 // SseBytesPacket ssePacket = new SseBytesPacket(ChunkEncoder.encodeChunk(bytes));
                 // 再次向客户端发送sse消息
@@ -208,7 +211,16 @@ public class OpenaiV1ChatHandler {
           // 发送一个大小为 0 的 chunk 以表示消息结束
           if (fnCallName.length() > 0) {
             // 获取数据
-            String functionCallResult = openaiV1ChatService.functionCall(fnCallName, fnCallArgs);
+            String content = MarkdownTableUtils.code("fncall", fnCallName + "(" + fnCallArgs + ")");
+
+            Kv chunk = StreamModelUtils.buildMessage("system", content);
+            String text = "data:" + JsonUtils.toJson(chunk) + "\n\n";
+            byte[] bytes = text.getBytes();
+            SseBytesPacket ssePacket = new SseBytesPacket(ChunkEncoder.encodeChunk(bytes));
+            // 再次向客户端发送sse消息
+            Tio.send(channelContext, ssePacket);
+
+            Kv functionCallResult = openaiV1ChatService.functionCall(fnCallName, fnCallArgs);
             // 再次发送到大模型
             if (functionCallResult != null) {
               long newStart = System.currentTimeMillis();
@@ -217,12 +229,33 @@ public class OpenaiV1ChatHandler {
               Kv functionCall = Kv.by("name", fnCallName).set("arguments", fnCallArgs);
               Kv assistantMessage = Kv.create();
               assistantMessage.set("role", "assistant").set("content", null).set("function_call", functionCall);
-              Kv userMessage = Kv.create().set("role", "user").set("content", functionCallResult);
+              Kv userMessage = Kv.create().set("role", "user").set("content", JsonUtils.toJson(functionCallResult));
 
               messages.add(assistantMessage);
               messages.add(userMessage);
               // 防止重复发送响应头
               httpResponse.setSend(true);
+
+              content = null;
+              String error = functionCallResult.getStr("error");
+              String message = functionCallResult.getStr("message");
+              if (error != null) {
+                content = MarkdownTableUtils.code("error", "error:" + error);
+              } else if (message != null) {
+                content = MarkdownTableUtils.code("message", "message:" + message);
+              }
+
+              if (content != null) {
+                chunk = StreamModelUtils.buildMessage("system", content);
+
+                text = "data:" + JsonUtils.toJson(chunk) + "\n\n";
+
+                bytes = text.getBytes();
+                ssePacket = new SseBytesPacket(ChunkEncoder.encodeChunk(bytes));
+                // 再次向客户端发送sse消息
+                Tio.send(channelContext, ssePacket);
+              }
+
               streamResponse(channelContext, httpResponse, headers, requestBody, newStart);
 
             } else {
