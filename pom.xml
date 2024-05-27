@@ -13,8 +13,8 @@
     <lombok-version>1.18.30</lombok-version>
     <hotswap-classloader.version>1.2.3</hotswap-classloader.version>
     <table-to-json.version>1.3.0</table-to-json.version>
-    <final.name>open-chat-server</final.name>
-    <main.class>com.litongjava.open.chat.OpenChatServer</main.class>
+    <final.name>db-ai-assistant</final.name>
+    <main.class>com.litongjava.ai.db.assistant.AbAiAssistantApp</main.class>
   </properties>
   <dependencies>
     <dependency>

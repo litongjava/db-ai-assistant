@@ -2,6 +2,8 @@
 ## 简介
 基于 Java 语言的tio-boot框架开发的数据查询框架，目前已经支持 open-webui。
 
+[演示地址](https://www.bilibili.com/video/BV1i7421Z7cr/?vd_source=69e3cff470444b21e8c322dddec00def)
+
 ## 主要功能
 
 - text-to-sql 将用户输入的自然语言转为sql,执行sql,返回可视化的查询结果

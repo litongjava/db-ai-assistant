@@ -1,4 +1,4 @@
-app = "courses-ag"
+app = "db-ai-assistant"
 primary_region = 'sjc'
 
 kill_signal = "SIGINT"

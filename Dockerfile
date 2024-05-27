@@ -5,7 +5,7 @@ FROM litongjava/jdk:8u391-stable-slim
 WORKDIR /app
 
 # Copy the jar file into the container
-COPY target/uh-courses-ai-agent-1.0.jar /app/
+COPY target/db-ai-assistant-1.0.jar /app/
 
 # Command to run the jar file
-CMD ["java", "-jar", "uh-courses-ai-agent-1.0.jar", "--app.env=prod"]
+CMD ["java", "-jar", "db-ai-assistant-1.0.jar", "--app.env=prod"]
