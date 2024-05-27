@@ -9,5 +9,6 @@ public class AbAiAssistantAppConfig implements TioBootConfiguration {
     new ExecutorServiceConfig().config();
     new HttpRequestHanlderConfig().config();
     new EnjoyEngineConfig().config();
+    new TableToJsonConfig().activeRecordPlugin();
   }
 }

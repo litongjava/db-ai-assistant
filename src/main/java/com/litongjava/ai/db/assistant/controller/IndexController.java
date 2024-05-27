@@ -6,7 +6,7 @@ import com.litongjava.tio.http.server.annotation.RequestPath;
 public class IndexController {
   @RequestPath()
   public String index() {
-    return "index";
+    return "index1";
   }
 }
 

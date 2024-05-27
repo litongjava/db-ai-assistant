@@ -171,9 +171,10 @@ public class OpenaiV1ChatHandler {
             line = openaiV1ChatService.processLine(line);
 
             // byte[] bytes = body.bytes();
-            // 异步拼接
             if (line.length() > 6) {
-              String data = line.substring(6, line.length());
+              int indexOf = line.indexOf(':');
+              String data = line.substring(indexOf+1, line.length());
+              openaiV1ChatService.processData(data);
               if (data.endsWith("}")) {
                 JSONObject parseObject = FastJson2Utils.parseObject(data);
                 JSONArray choices = parseObject.getJSONArray("choices");

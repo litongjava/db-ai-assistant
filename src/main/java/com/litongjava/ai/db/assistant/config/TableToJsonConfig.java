@@ -4,8 +4,6 @@ import javax.sql.DataSource;
 
 import com.jfinal.template.Engine;
 import com.jfinal.template.source.ClassPathSourceFactory;
-import com.litongjava.jfinal.aop.annotation.AConfiguration;
-import com.litongjava.jfinal.aop.annotation.AInitialization;
 import com.litongjava.jfinal.plugin.activerecord.ActiveRecordPlugin;
 import com.litongjava.jfinal.plugin.activerecord.OrderedFieldContainerFactory;
 import com.litongjava.jfinal.plugin.activerecord.dialect.PostgreSqlDialect;
@@ -18,7 +16,6 @@ import com.litongjava.tio.utils.environment.EnvUtils;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 
-@AConfiguration
 public class TableToJsonConfig {
 
   public DataSource dataSource() {
@@ -50,8 +47,6 @@ public class TableToJsonConfig {
    *
    * config ActiveRecordPlugin
    */
-
-  @AInitialization
   public void activeRecordPlugin() {
     // get dataSource
     DataSource dataSource = dataSource();

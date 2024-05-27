@@ -51,6 +51,13 @@ public class OpenaiV1ChatService {
 //    log.info("line:{}", line);
     return line;
   }
+  
+
+  public String processData(String data) {
+    log.info("data:{}",data);
+    return data;
+    
+  }
 
   public void completionContent(StringBuffer completionContent) {
 
