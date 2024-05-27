@@ -3,6 +3,8 @@
 基于 Java 语言的tio-boot框架开发的数据查询框架，目前已经支持 open-webui。
 
 [演示地址](https://www.bilibili.com/video/BV1i7421Z7cr/?vd_source=69e3cff470444b21e8c322dddec00def)
+[自行编译t-boot](https://tio-boot.litongjava.com/zh/01_tio-boot%20%E7%AE%80%E4%BB%8B/06.html#%E5%AE%89%E8%A3%85-tio-%E4%BE%9D%E8%B5%96%E9%A1%B9)
+
 
 ## 主要功能
 
