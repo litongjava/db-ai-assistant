@@ -13,7 +13,6 @@ import com.litongjava.ai.db.assistant.client.StreamModelUtils;
 import com.litongjava.ai.db.assistant.constants.Fns;
 import com.litongjava.ai.db.assistant.constants.Prompts;
 import com.litongjava.data.services.DbService;
-import com.litongjava.data.utils.MarkdownTableUtils;
 import com.litongjava.jfinal.aop.Aop;
 import com.litongjava.jfinal.plugin.activerecord.Db;
 import com.litongjava.tio.boot.constatns.TioBootConfigKeys;
@@ -24,6 +23,7 @@ import com.litongjava.tio.utils.dsn.JdbcInfo;
 import com.litongjava.tio.utils.environment.EnvUtils;
 import com.litongjava.tio.utils.json.FastJson2Utils;
 import com.litongjava.tio.utils.json.JsonUtils;
+import com.litongjava.tio.utils.markdown.MdUtils;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -97,8 +97,7 @@ public class OpenaiV1ChatService {
       String sql = parseObject.getString("sql");
 
       // 获取数据
-      String content = MarkdownTableUtils.code("sql", fnCallName + "(" + fnCallArgs + ")");
-
+      String content = MdUtils.code("sql", sql);
       Kv chunk = StreamModelUtils.buildMessage("system", content);
       SseUtils.pushChunk(channelContext, JsonUtils.toJson(chunk));
 
@@ -118,7 +117,8 @@ public class OpenaiV1ChatService {
             log.info(string);
             // 发送消息到客户端
             Kv message = StreamModelUtils.buildMessage("system", string);
-            SseUtils.pushChunk(channelContext, JsonUtils.toJson(message));
+            content = MdUtils.code("message", string);
+            SseUtils.pushChunk(channelContext, JsonUtils.toJson(content));
             return Kv.by("message", string);
           } else {
             List<Kv> lists = coursesService.find(sql);
@@ -131,7 +131,8 @@ public class OpenaiV1ChatService {
 
       } catch (Exception e) {
         // 发送消息到客户端
-        Kv message = StreamModelUtils.buildMessage("system", e.getMessage());
+        content = MdUtils.code("error", e.getMessage());
+        Kv message = StreamModelUtils.buildMessage("system", content);
         SseUtils.pushChunk(channelContext, JsonUtils.toJson(message));
         return Kv.by("error", e.getMessage());
       }
