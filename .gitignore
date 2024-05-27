@@ -153,4 +153,4 @@ venv/
 Debug/
 vcpkg_installed/
 .env
-app-pord.properties
+app-prod.properties
