@@ -116,9 +116,9 @@ public class OpenaiV1ChatService {
             String string = "total records are " + count + ", please set page size to 10";
             log.info(string);
             // 发送消息到客户端
-            Kv message = StreamModelUtils.buildMessage("system", string);
             content = MdUtils.code("message", string);
-            SseUtils.pushChunk(channelContext, JsonUtils.toJson(content));
+            Kv message = StreamModelUtils.buildMessage("system", content);
+            SseUtils.pushChunk(channelContext, JsonUtils.toJson(message));
             return Kv.by("message", string);
           } else {
             List<Kv> lists = coursesService.find(sql);
