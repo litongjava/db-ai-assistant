@@ -125,12 +125,12 @@ public class OpenaiV1ChatService {
           } else {
             List<Record> lists = Db.find(sql);
             List<Kv> kvs = KvUtils.recordsToKv(lists, false);
-            return Kv.by("result", lists);
+            return Kv.by("result", kvs);
           }
         } else {
           List<Record> lists = Db.find(sql);
           List<Kv> kvs = KvUtils.recordsToKv(lists, false);
-          return Kv.by("result", lists);
+          return Kv.by("result", kvs);
         }
 
       } catch (Exception e) {
