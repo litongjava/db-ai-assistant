@@ -13,8 +13,10 @@ import com.litongjava.ai.db.assistant.client.StreamModelUtils;
 import com.litongjava.ai.db.assistant.constants.Fns;
 import com.litongjava.ai.db.assistant.constants.Prompts;
 import com.litongjava.data.services.DbService;
+import com.litongjava.data.utils.KvUtils;
 import com.litongjava.jfinal.aop.Aop;
 import com.litongjava.jfinal.plugin.activerecord.Db;
+import com.litongjava.jfinal.plugin.activerecord.Record;
 import com.litongjava.tio.boot.constatns.TioBootConfigKeys;
 import com.litongjava.tio.core.ChannelContext;
 import com.litongjava.tio.http.server.util.SseUtils;
@@ -101,11 +103,11 @@ public class OpenaiV1ChatService {
       Kv chunk = StreamModelUtils.buildMessage("system", content);
       SseUtils.pushChunk(channelContext, JsonUtils.toJson(chunk));
 
-      CoursesService coursesService = Aop.get(CoursesService.class);
       try {
         if (sql.contains("COUNT(") || sql.contains("LIMIT")) {
-          List<Kv> lists = coursesService.find(sql);
-          return Kv.by("result", lists);
+          List<Record> lists = Db.find(sql);
+          List<Kv> kvs = KvUtils.recordsToKv(lists, false);
+          return Kv.by("result", kvs);
         }
         int indexOf = sql.indexOf("FROM");
         if (indexOf > 0) {
@@ -121,11 +123,13 @@ public class OpenaiV1ChatService {
             SseUtils.pushChunk(channelContext, JsonUtils.toJson(message));
             return Kv.by("message", string);
           } else {
-            List<Kv> lists = coursesService.find(sql);
+            List<Record> lists = Db.find(sql);
+            List<Kv> kvs = KvUtils.recordsToKv(lists, false);
             return Kv.by("result", lists);
           }
         } else {
-          List<Kv> lists = coursesService.find(sql);
+          List<Record> lists = Db.find(sql);
+          List<Kv> kvs = KvUtils.recordsToKv(lists, false);
           return Kv.by("result", lists);
         }
 
